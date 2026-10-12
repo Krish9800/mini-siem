@@ -1,6 +1,5 @@
 """Unit tests for threat intelligence feed enrichment."""
 
-
 from mini_siem.intel.threat_intel import ThreatIntelEngine
 from mini_siem.models.enums import AlertUrgency, IOCType
 from mini_siem.models.schemas import SIEMLogEvent, ThreatFeedItem

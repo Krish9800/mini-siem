@@ -1,0 +1,35 @@
+services:
+  mini-siem:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mini-siem:latest
+    container_name: mini-siem-daemon
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      - "8000:8000"
+    volumes:
+      - siem-data:/data
+      - /tmp:/tmp:rw
+    environment:
+      - SIEM_ENVIRONMENT=production
+      - SIEM_LOG_LEVEL=INFO
+      - SIEM_DATA_DIR=/data
+      - SIEM_DATABASE_URL=/data/siem.db
+      - SIEM_WAL_MODE=true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  siem-data:
+    driver: local
