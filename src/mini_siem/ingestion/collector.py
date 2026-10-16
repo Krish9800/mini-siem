@@ -92,7 +92,24 @@ class LogNormalizer:
         if match_3164:
             return self._parse_rfc3164(match_3164, raw=trimmed)
 
-        # 5. Fallback generic log
+        # 5. Attempt direct SSH authentication line
+        match_ssh = self.SSH_AUTH_REGEX.search(trimmed)
+        if match_ssh:
+            is_success = match_ssh.group("action") == "Accepted"
+            return SIEMLogEvent(
+                host=host,
+                sourcetype=SourceType.AUTH,
+                severity=EventSeverity.INFORMATIONAL if is_success else EventSeverity.HIGH,
+                process="sshd",
+                action="login",
+                status="success" if is_success else "failure",
+                user=match_ssh.group("user"),
+                src_ip=match_ssh.group("src_ip"),
+                src_port=int(match_ssh.group("src_port")),
+                raw=trimmed,
+            )
+
+        # 6. Fallback generic log
         return SIEMLogEvent(
             host=host,
             sourcetype=sourcetype,

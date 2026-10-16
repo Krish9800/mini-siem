@@ -11,6 +11,7 @@ from collections import deque
 from datetime import datetime, timedelta
 from typing import Any
 
+from mini_siem.engine.suppression import AlertSuppressionEngine
 from mini_siem.models.enums import RuleType
 from mini_siem.models.schemas import SIEMAlert, SIEMLogEvent, SIEMRule
 
@@ -18,8 +19,13 @@ from mini_siem.models.schemas import SIEMAlert, SIEMLogEvent, SIEMRule
 class RuleEvaluator:
     """Evaluates SIEMLogEvents against a registered collection of SIEMRules."""
 
-    def __init__(self, rules: list[SIEMRule] | None = None) -> None:
+    def __init__(
+        self,
+        rules: list[SIEMRule] | None = None,
+        suppression_engine: AlertSuppressionEngine | None = None,
+    ) -> None:
         self.rules: dict[str, SIEMRule] = {}
+        self.suppression_engine = suppression_engine
         # Precompiled regexes: rule_id -> Pattern
         self._compiled_regexes: dict[str, re.Pattern[str]] = {}
 
@@ -63,7 +69,16 @@ class RuleEvaluator:
                     if alert:
                         alerts.append(alert)
 
+        if self.suppression_engine:
+            filtered: list[SIEMAlert] = []
+            for a in alerts:
+                suppressed, _ = self.suppression_engine.process(a)
+                if not suppressed:
+                    filtered.append(a)
+            return filtered
+
         return alerts
+
 
     def evaluate_batch(self, events: list[SIEMLogEvent]) -> list[SIEMAlert]:
         """Evaluate a batch of log events sequentially."""

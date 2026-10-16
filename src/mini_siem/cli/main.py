@@ -20,7 +20,9 @@ from rich.table import Table
 from mini_siem.config.settings import get_settings
 from mini_siem.db.database import Database
 from mini_siem.engine.rule_evaluator import RuleEvaluator
+from mini_siem.engine.suppression import AlertSuppressionEngine
 from mini_siem.ingestion.collector import LogNormalizer
+from mini_siem.ingestion.generator import LogGenerator
 from mini_siem.intel.threat_intel import ThreatIntelEngine
 from mini_siem.models.enums import RuleType, SourceType
 from mini_siem.models.schemas import SearchQuery
@@ -108,6 +110,14 @@ def ingest_cmd(
     file_path: Annotated[Path, typer.Argument(help="Path to raw log file")],
     sourcetype: Annotated[SourceType, typer.Option("--sourcetype", "-s")] = SourceType.CUSTOM,
     host: Annotated[str, typer.Option("--host", "-h")] = "cli-ingest",
+    suppress_cooldown: Annotated[
+        int,
+        typer.Option(
+            "--suppress-cooldown",
+            "-c",
+            help="Alert suppression cooldown in seconds (0 to disable)",
+        ),
+    ] = 0,
 ) -> None:
     """Ingest a local log file, evaluate rules & IOCs, and store events."""
     if not file_path.is_file():
@@ -116,7 +126,12 @@ def ingest_cmd(
 
     settings = get_settings()
     db = Database(settings.effective_db_path)
-    evaluator = RuleEvaluator(db.list_rules())
+    suppression = (
+        AlertSuppressionEngine(cooldown_seconds=suppress_cooldown)
+        if suppress_cooldown > 0
+        else None
+    )
+    evaluator = RuleEvaluator(db.list_rules(), suppression_engine=suppression)
     threat_intel = ThreatIntelEngine(db.list_threat_feed_items())
     normalizer = LogNormalizer()
 
@@ -140,6 +155,44 @@ def ingest_cmd(
     console.print(
         f"[green]Successfully ingested {len(events)} events. Triggered {len(alerts)} alerts.[/]"
     )
+
+
+# -------------------------------------------------------------
+# Generate / Simulate Command
+# -------------------------------------------------------------
+@app.command(name="generate")
+def generate_cmd(
+    scenario: Annotated[
+        str,
+        typer.Option(
+            "--scenario",
+            "-s",
+            help="Attack scenario: brute-force, web-attacks, syslog",
+        ),
+    ] = "brute-force",
+    count: Annotated[
+        int,
+        typer.Option("--count", "-n", help="Number of log lines to generate"),
+    ] = 10,
+    output: Annotated[
+        Path | None, typer.Option("--output", "-o", help="Optional output file path")
+    ] = None,
+) -> None:
+    """Generate synthetic log streams for testing SIEM rules and pipelines."""
+    generator = LogGenerator()
+    try:
+        logs = generator.generate_scenario(scenario=scenario, count=count)
+    except ValueError as err:
+        console.print(f"[red]Error:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    if output:
+        output.write_text("\n".join(logs) + "\n", encoding="utf-8")
+        console.print(f"[green]Successfully generated {len(logs)} logs to[/] {output}")
+    else:
+        for log in logs:
+            console.print(log)
+
 
 
 # -------------------------------------------------------------
